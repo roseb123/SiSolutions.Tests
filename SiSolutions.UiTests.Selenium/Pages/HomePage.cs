@@ -119,6 +119,56 @@ public sealed class HomePage
         PanelLocator:   By.CssSelector($"section.content-panel#{sectionId}"),
         HeadingLocator: By.CssSelector($"section#{sectionId} h2 span[data-i18n]"));
 
+    // ── Page-level helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns the current document title after the page has finished loading.
+    /// </summary>
+    public string GetPageTitle()
+    {
+        _driver.WaitFor(d => !string.IsNullOrWhiteSpace(d.Title), _timeout, "Page title was not populated.");
+        return _driver.Title;
+    }
+
+    /// <summary>
+    /// Returns the visible body text for lightweight content assertions.
+    /// </summary>
+    public string GetVisibleBodyText()
+    {
+        var body = _driver.WaitForElementVisible(By.TagName("body"), _timeout);
+        return body.Text.Trim();
+    }
+
+    /// <summary>
+    /// Checks whether the page source contains the supplied text.
+    /// </summary>
+    public bool ContainsText(string text)
+        => _driver.PageSource.Contains(text, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Returns the section IDs currently exposed by the navigation menu.
+    /// </summary>
+    public IReadOnlyList<string> GetNavSectionIds()
+    {
+        var sectionIds = _driver.FindElements(By.CssSelector("a.menu-link[data-section]"))
+            .Select(el => el.GetDomAttribute("data-section"))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id!)
+            .ToList();
+
+        return sectionIds.AsReadOnly();
+    }
+
+    /// <summary>
+    /// Returns the visible heading text for the supplied section, after that section has been activated.
+    /// </summary>
+    public string GetSectionHeading(string sectionId)
+    {
+        return _driver.WaitForElementVisible(
+            By.CssSelector($"section#{sectionId} h2 span[data-i18n]"),
+            _timeout).Text.Trim();
+    }
+
     // ── Contact section helpers ───────────────────────────────────────────────
 
     /// <summary>

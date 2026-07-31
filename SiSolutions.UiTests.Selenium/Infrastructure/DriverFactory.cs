@@ -1,6 +1,9 @@
 #nullable enable
 
 using System.Drawing;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
 using OpenQA.Selenium;
 using OpenQA.Selenium.Chrome;
 using OpenQA.Selenium.Chromium;
@@ -48,14 +51,59 @@ public static class DriverFactory
 
     private static IWebDriver CreateEdgeDriver(TestSettings settings)
     {
-        new DriverManager().SetUpDriver(new EdgeConfig());
+        // Prefer matching-browser resolution to avoid unnecessary network lookups for latest.
+        try
+        {
+            new DriverManager().SetUpDriver(new EdgeConfig(), VersionResolveStrategy.MatchingBrowser);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"DriverManager.SetUpDriver failed: {ex.GetType().Name}: {ex.Message}");
+            // Swallow here — we'll try to fall back to a local driver if available.
+        }
 
         var options = new EdgeOptions();
         ApplyCommonArguments(options, settings);
 
-        var driver = new EdgeDriver(options);
-        PostConfigure(driver);
-        return driver;
+        // Try creating the EdgeDriver normally. If the driver binary isn't available
+        // (network or WebDriverManager failure), attempt to locate a local msedgedriver
+        // on PATH and use it. If that also fails, rethrow to let the caller decide.
+        try
+        {
+            var driver = new EdgeDriver(options);
+            PostConfigure(driver);
+            return driver;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"EdgeDriver creation failed: {ex.GetType().Name}: {ex.Message}");
+
+            // Look for a local msedgedriver executable on PATH.
+            var exeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "msedgedriver.exe" : "msedgedriver";
+            var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+            foreach (var dir in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    var candidate = Path.Combine(dir, exeName);
+                    if (File.Exists(candidate))
+                    {
+                        var service = EdgeDriverService.CreateDefaultService(dir, exeName);
+                        var driver = new EdgeDriver(service, options);
+                        PostConfigure(driver);
+                        return driver;
+                    }
+                }
+                catch (Exception innerEx)
+                {
+                    Debug.WriteLine($"Searching PATH for msedgedriver failed in '{dir}': {innerEx.GetType().Name}: {innerEx.Message}");
+                    // ignore and continue searching
+                }
+            }
+
+            // If we reach here, no driver could be created; rethrow to let caller handle it.
+            throw;
+        }
     }
 
     // ── Shared helpers ─────────────────────────────────────────────────────
